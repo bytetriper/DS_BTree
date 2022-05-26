@@ -20,12 +20,18 @@ namespace sjtu {
         pair(const pair<U1, U2> &other) : first(other.first), second(other.second) {}
         template<class U1, class U2>
         pair(pair<U1, U2> &&other) : first(other.first), second(other.second) {}
+        template<class U1, class U2>
+        pair& operator =(const pair<U1,U2>& other)
+        {
+            first = other.first;
+            second = other.second;
+            return *this;
+        }
         bool operator <(const pair &o){
             return first<o.first;
         }bool operator <=(const pair &o){
             return first<=o.first;
         }
-        &ostream operator <<()
     };
 
 }

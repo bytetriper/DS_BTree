@@ -4,7 +4,8 @@
 #include<iostream>
 #include<cstring>
 #include"utility.hpp"
-#include"exception.hpp"
+#include"exceptions.hpp"
+#include"list.hpp"
 #define test(x) std::cout<<(x)<<std::endl
 typedef long long ll;
 namespace sjtu {
@@ -12,57 +13,128 @@ namespace sjtu {
     class BTree {
     public:
         typedef pair<Key,Value> pr;
+        
     private:
         // Your private members go here
         std::fstream f;
-        const char* fn;
+        std::string fn;
     public:
         static const int node_size=5;
-        static const int leaf_size=10;
-        static const int blocksiz=4096;
+        static const int leaf_size=5;
+        static const int blocksiz=400;
         class node{
             public:
-            int ads;//address
-            int siz;
-            ll son[BTree::node_size+1];
+            using prn=pair<pr,node*> ;
+            using piterator=typename list<prn>::iterator;
+            static int node_cnt;
+            const BTree *ot;
+            list<prn> *t;
+            node *fa;
             bool isleaf;
-            int bro;
-            pr val[BTree::leaf_size+1];//leaf or node value
-            int nxt[BTree::leaf_size+1];//tricky way to contain the length
-            int pre[BTree::leaf_size+1];
-            int head,tail;
-            node(BTree *t):bro(0),siz(0),isleaf(0),siz(0),ads(0){
-                for(int i=0;i<BTree::leaf_size;++i)
-                    son[i]=nxt[i]=pre[i]=0;
-                head=tail=0;
+            int ads;//address_if is leaf
+            int rb,lb;//next/last brother's address
+            node(const BTree *tp=nullptr):fa(nullptr),ot(tp),lb(0),rb(0),isleaf(0),ads(0){
+                t=new list<prn>();
             }
-            node(const node &o):head(o.head),tail(o.tail),bro(o.bro),siz(o.siz),isleaf(o.isleaf),siz(o.siz),ads(o.ads){
-                for(int i=0;i<siz;++i)
-                {    son[i]=o.son[i];
-                    pre[i]=o.pre[i];
-                    nxt[i]=o.nxt[i];
-                    
+            node(const node &o):fa(o.fa),ot(o.ot),lb(o.lb),rb(o.rb),isleaf(o.isleaf),ads(o.ads)
+            {
+                t = new list<prn>(*(o.t));
+            }
+            inline pair<piterator,bool> ins(pr &x,node *tar=nullptr)//insert a pr by ascending order of Key
+            {
+                prn tmp(x,tar);
+                if(t->empty())
+                {
+                    t->push_back(tmp);
+                    return pair<piterator,bool>(--(t->end()),true);
                 }
-                
+                piterator k=t->begin();
+                for(piterator i=t->begin();i!=--(t->end());)
+                {
+                    if((*i).first.first==x.first)
+                        return pair<piterator,bool>(t->end(),false);
+                    if((*i).first.first<x.first)
+                        k=++i;
+                    else
+                        break;
+                }
+                return pair<piterator,bool>(t->insert(k,tmp),true);
+            }
+            inline bool del(const Key &key)
+            {
+                bool fg=0;
+                for(piterator i=t->begin();i!=t->end();++i)
+                {
+                    if((*i).first.first==key)
+                    {    t->erase(i);
+                        fg=1;
+                        break;
+                    }
+                }
+                return fg;
             }
         };
-        int cnt;
-        ll root;
-        template<class T>
-        inline void read(T &x,ll filep=-1){
+        using piterator =typename list<pair<pr,node *>>::iterator;
+        //int node::node_cnt=0;
+        node *root;
+        inline void read(node &x,ll filep=-1){//MD
             if(filep!=-1)
                 f.seekg(filep);
-            f.read(reinterpret_cast<char *>(&x),sizeof(T));
+            x.t->clear();
+            int siz;
+            f.read(reinterpret_cast<char *>(&siz),sizeof(int));
+            pr tmp;
+            if (!f.good())
+            {
+                test("Error while reading at position_01 :");
+                test(filep);
+                throw runtime_error();
+            }
+            test("read size equals:");
+            test(siz);
+            for(int i=1;i<=siz;++i)
+            {
+                f.read(reinterpret_cast<char *>(&tmp),sizeof(pr));
+                if(!f.good())
+                {
+                    test("Error while reading at position_02 :");
+                    test(filep);
+                    throw runtime_error();
+                }
+                const pair<pr,node *> tp(tmp,nullptr);
+                (x.t)->push_back(tp);
+                test(x.t->size());
+            }
+            if (!f.good())
+            {
+                test("Error while reading at position_03 :");
+                test(filep);
+                throw runtime_error();
+            }
             return;
         }
-        template<class T>
-        inline void write(const T &x,ll filep=-1){
+        inline void write(const node &x,ll filep=-1){//MD
             if(filep!=-1)
                 f.seekp(filep);
-            f.write(reinterpret_cast<char *>(&x),sizeof(T));
+            int siz=x.t->size();
+            f.write(reinterpret_cast<const char *>(&siz),sizeof(int));
+            test("write size equals:");
+            test(siz);
+            for(piterator i=x.t->begin();i!=x.t->end();++i)
+            {
+                pr tmp((*i).first);
+                f.write(reinterpret_cast<const char *>(&tmp),sizeof(pr));
+                if(!f.good())
+                {
+                    test("Error while writing at position :");
+                    test(filep);
+                    throw runtime_error();
+                }
+                test("write count");
+            }
             return;
         }
-        inline void check(){
+        inline void check(){//MD
             if(f.is_open())
                 test("Open Successfully");
             else
@@ -71,16 +143,34 @@ namespace sjtu {
                 throw runtime_error();
             }
         }
-        BTree():fn("tmp.txt"):cnt(0){
-            f.open(fn,std::ios::in|std::ios::out|std::ios::binary);
+        BTree():fn("tmp.txt"){//MD
+            root=new node(this);
+            root->isleaf = true;
+            root->ads = ++node::node_cnt;
+            f.open(fn,std::ios::in|std::ios::out|std::ios::binary|std::ios::trunc);
             check();
+            write(*root,root->ads*blocksiz);
+            if (!f.good())
+            {
+                test("Init Error\n");
+                throw runtime_error();
+            }
         }
 
-        BTree(const char *fname):cnt(0) {
+        BTree(const char *fname) {//MD
+            root=new node(this);
+            root->isleaf = true;
+            root->ads = ++node::node_cnt;
             fn=fname;
-            if(!fn)fn="tmp.txt";
-            f.open(fn,std::ios::in|std::ios::out|std::ios::binary);
-            check();
+            if(fn=="")fn="tmp.txt";//clear the file before open
+            f.open(fn,std::ios::in|std::ios::out|std::ios::binary|std::ios::trunc);
+            check();  
+            write(*root, root->ads * blocksiz);
+            if (!f.good())
+            {
+                test("Init Error\n");
+                throw runtime_error();
+            }
         }
 
         ~BTree() {
@@ -89,211 +179,146 @@ namespace sjtu {
         }
 
         // Clear the BTree
-        void clear(ll pos=root) {
-            node t;
-            read(t,pos*blocksiz);
-            if(!t)return;
-            for(int i=0;i<=siz;++i)
-                clear(t->son[i]);
-            delete t;
+        void clear(node *p) {//MD recursively delete
+            if(!p)return;
+            for(piterator i=p->t->begin();i!=p->t->end();++i)
+                clear((*i).second);
+            delete p;
+            p=nullptr;
+            return ;
         }
-        inline pair<node,bool> find(const Key &key){
-            node p;
-            read(p,root*blocksiz);
-            while(!(p.isleaf)){
-                if(key<p.val[1].first){
-                    read(p,p.son[1]*blocksiz);
-                    continue;
-                }
-                for(int i=p.head;i!=p.tail;i=nxt[i])
+        inline pair<int,bool> fd_leaf(const Key &key)//MD
+        {
+            node *p=root; 
+            while(!(p->isleaf))
+            {
+                piterator k=p->t->begin();
+                for(piterator i=p->t->begin();i!=p->t->end();)
                 {
-                    if(!p.nxt[i]){
-                        if(key>=p.val[i].first)
-                            read(p,p.son[0]*blocksiz);
+                    if(key>=(*i).first.first)
+                        k=++i;
+                    else
                         break;
-                    }
-                    if(key>=p.val[i].first&&key<p.val[p.nxt[i]].first)
-                    {
-                        read(p,p.son[p.nxt[i]]*blocksiz);
-                        break;
-                    }
                 }
+                if(!((*k).second))
+                    return pair<int,bool>(0,false);
+                p=(*k).second;
             }
-            for(int i=0;i<p.siz;++i){
-                if(p.val[i].first==key)
-                    return pair<node,bool>(p,true);
+            return pair<int,bool>(p->ads,true);
+        }
+        inline void split(node *p){//MD
+            if(!(p->fa))//No father ---->root
+            {
+                p->fa=new node(this);
+                root = p->fa;
+                pr tmp(p->t->front().first);
+                root->ins(tmp, p);
+                pr empty_node;
+                root->ins(empty_node,nullptr);
             }
-            return pair<node,bool>(p,false);
-        }
-        inline void ins(node &p,const pr &tar,ll ads,int pos){
-            p.siz++;
-            p.val[p.siz]=tar;
-            p.son[p.siz]=ads;
-            p.pre[p.nxt[pos]]=p.siz;
-            p.nxt[p.siz]=p.nxt[pos];
-            p.pre[p.siz]=pos;
-            p.nxt[pos]=p.siz;
-        }
-        inline void del(node &p,int pos){
-            p.pre[p.nxt[pos]]=p.pre[pos];
-            p.nxt[p.pre[pos]]=p.nxt[pos];
-            p.pre[pos]=p.nxt[pos]=0;
-        }
-        inline void split(node &p,node &fa,int pos){
-            node newson;
-            newson.isleaf=true;
-            newson.ads=++cnt;
-            newson.siz=p.siz-1-(p.siz>>1);
-            newson.son[0]=p.son[0];
-            int counter=1,midpos;
-            for(int i=1;p.nxt[i];i=p.nxt[i],counter++){
-                if(counter>1+(p.siz>>1)){
-                    ins(newson,p.val[i],p.son[i],newson.pre[0]);//add element in tail
-                }
-                if(counter==(p.siz>>1)+1)
-                    midpos=i;
-            }          
-            p.son[0]=p.son[midpos];
-            ins(fa,p.val[midpos],p.ads,pos);
-            fa.son[fa.nxt[fa.siz]]=newson.ads;
-            newson.bro=p.bro;
-            p.bro=newson.ads;
-            write(newson,newson.ads*blocksiz);//save the node in the file
+            node *newson=new node(*p);
+            if(newson->isleaf)
+                newson->ads=++node::node_cnt;
+            int m=p->t->size();
+            int mp=m>>1;int mnew=m-mp;
+            for(int i=1;i<=m-mp;++i)
+                p->t->pop_back();
+            for(int i=1;i<=m-mnew;++i)
+                newson->t->pop_front();
+            pr tmp(newson->t->front().first);
+            piterator k=(p->fa->ins(tmp,p)).first;
+            ++k;
+            (*k).second=newson;
+            p->rb=newson->ads;
+            newson->lb=p->ads;
+            if(newson->isleaf)
+                write(*newson,(newson->ads)*blocksiz);
+            if(p->fa->t->size()>node_size)
+                split(p->fa);
             return;
         }
-        bool dfs_insert(const Key &key, const Value &value,node &fa,ll ads,ll pos) {
-            node p;
-            read(p,ads*blocksiz);
-            bool fg=0;
+        bool insert(const Key &key,const Value &value){//MD
+            node *p=root; 
             pr tmp(key,value);
-            if(!(p->isleaf)){
-                if(key<p.val[0].first)
+            while(!(p->isleaf))
+            {
+                piterator k=p->t->begin();
+                for(piterator i=p->t->begin();i!=(--p->t->end());)
                 {
-                    fg=dfs_insert(key,value,p,p.son[0],0);
+                    if(key>=(*i).first.first)
+                        k=++i;
+                    else
+                        break;
                 }
-                for(int i=1;;i=nxt[i])
+                if(!((*k).second))
                 {
-                    if(!p.nxt[i]){
-                        if(key>=p.val[i].first)
-                        {
-                            //read(p,p.val[0]*blocksiz);
-                            fg=dfs_insert(key,value,p,p.son[i],i);
-                        }
-                        break;
-                    }
-                    if(key>=p.val[i].first&&key<p.val[p.nxt[i]].first)
-                    {
-                        fg=dfs_insert(key,value,p,p.sin[i],i);
-                        break;
-                    }
+                    (*k).second=new node(this);//ASK FOR STORAGE!
+                    ((*k).second)->isleaf=true;
+                    ((*k).second)->fa=p;
+                    ((*k).second)->ads=++(node::node_cnt);
                 }
+                p=(*k).second;
             }
-            else{
-                for(int i=1;i<=p.leaf_siz;++i){
-                    if(p.val[i].first==key)
-                        return false;
+            test("p.ads:");
+            test(p->ads);
+            read(*p, p->ads * blocksiz);
+            bool fg=(p->ins(tmp)).second;
+            if(fg)
+            {
+                test(p->t->size());
+                if(p->t->size()>leaf_size)
+                {    
+                    split(p);
+                    test("Split just happened!\n");
                 }
-                for(int i=1;;i=nxt[i]){
-                    if(!nxt[i]){
-                        if(key>p.val[i].first)
-                            ins(p,tmp,0,i);
-                        fg=1;
-                    }
-                    if(key>=p.val[i].first&&key<p.val[nxt[i]].first)
-                    {
-                        ins(p,tmp,0,i);
-                        break;
-                    }
-                }
+                write(*p,p->ads*blocksiz);
             }
-            if(p.siz>(p.isleaf?leaf_size:node_size)){
-                if(fa.ads)
-                    split(p,fa,pos);
-                else{
-                    node t;
-                    t.ads=root=++cnt;
-                    split(p,t,pos);
-                    write(t,t.ads*blocksiz);
-                }
-            }
-            write(p,ads*blocksiz);//maybe in the "if"
             return fg;
         }
-        bool insert(const Key &key,const Value &value){
-            node p=node();
-            return dfs_insert(key,value,p,root,0);
-        }
-        bool modify(const Key &key, const Value &value) {
-            pair<node,bool> tmp=find(key);
-            if(!(tmp->second))
+        bool modify(const Key &key, const Value &value) {//MD
+            pair<int,bool> tmp=fd_leaf(key);
+            if(!(tmp.second))
                 return false;
-            node p=tmp.first;
-            for(int i=1;p.nxt[i];i=p.nxt[i]){
-                if(p.val[i].first==key){
-                    p.val[i].second=value;
-                    write(p,p.ads*blocksiz);
+            node p;
+            read(p,tmp.first*blocksiz);
+            for(piterator i=p->t->begin();i!=(--p->t->end());++i)
+            {
+                if((*i).first.first==key)
+                {
+                    (*i).first.second=value;
+                    write(p,tmp.first*blocksiz);
                     return true;
                 }
             }
+            return false;
             throw runtime_error();
         }
-
         Value at(const Key &key) {
-            pair<node,bool> p=find(key);
-            if(!(p->second)){
-                throw runtime_error();
+            pair<int,bool> p=fd_leaf(key);
+            if(!(p.second)){
+                test("at:can't find the corresponding value!\n");
+                throw index_out_of_bound();
             }
-            for(int i=1;p.nxt[i];i=p.nxt[i]){
-                if(p.val[i].first==key){
-                    return p.val[i].second;
-                }
+            node tp;
+            read(tp,p.first*blocksiz);
+            for(piterator i=tp.t->begin();i!=tp.t->end();++i)
+            {
+                if((*i).first.first==key)
+                    return (*i).first.second;
             }
-            throw runtime_error();
-        }
-
-        bool dfs_erase(const Key &key,node &fa,int ads,int pos) {
-            node p;
-            read(p,ads*blocksiz);
-            bool fg=0;
-            if(!(p->isleaf)){
-                if(key<p.val[0].first)
-                {
-                    //read(p,p.son[0]*blocksiz);
-                    fg=dfs_erase(key,p,p.son[0],0);
-                }
-                for(int i=1;;i=nxt[i])
-                {
-                    if(!p.nxt[i]){
-                        if(key>=p.val[i].first)
-                        {
-                            //read(p,p.val[0]*blocksiz);
-                            fg=dfs_erase(key,p,p.son[i],i);
-                        }
-                        break;
-                    }
-                    if(key>=p.val[i].first&&key<p.val[p.nxt[i]].first)
-                    {
-                        fg=dfs_erase(key,p,p.son[i],i);
-                        break;
-                    }
-                }
-            }
-            else{
-                for(int i=1;i<=p.leaf_siz;++i){
-                    if(p.val[i].first==key)
-                    {
-                        del(p,i);
-                        fg=true;
-                        break;
-                    }
-                }
-            }
-            write(p,ads*blocksiz);
-            return fg;
+            test("at:can't find the corresponding value!\n");
+            throw index_out_of_bound();
         }
         bool erase(const Key &key) {
-            node p=node();
-            return dfs_erase(key,p,root,0);
+            pair<int,bool> p=fd_leaf(key);
+            if(!(p.second))
+                return false;
+            node tp;
+            read(tp,p.first*blocksiz);
+            bool fg=tp.del(key);
+            if (fg)
+                write(tp,p.first*blocksiz);
+            return fg;
         }
         
         class iterator {
@@ -301,76 +326,208 @@ namespace sjtu {
             // Your private members go here
         public:
             node *tar;
-            int pos;
+            piterator pt;
             BTree *ot;
-            iterator():tar(nullptr),ot(nullptr),pos(0) {
-                
+            iterator(const BTree *t=nullptr):tar(nullptr),ot(t),pt() {
             }
-            iterator(const iterator& other):tar(other.tar),ot(other.ot),pos(other.pos) {
-                
+            iterator(const iterator& other):ot(other.ot) {
+                tar=new node(*(other.tar));
+                for(pt=tar->t->begin();pt!=tar->t->end();++pt)
+                    if((*pt).first==(*other.pt).first)
+                        break;
             }
 
             // modify by iterator
             bool modify(const Value& value) {
-                return ot->modify(tar->val[pos],value);
+                if(!ot)
+                {
+                    test("Invalid operator:No BTree\n");
+                    throw index_out_of_bound();
+                }
+                return ot->modify((*pt).first.first,value);
             }
 
             Key getKey() const {
-                return tar->val[pos].first;
+                return (*pt).first.first;
             }
 
             Value getValue() const {
-                return tar->val[pos].second;
-            }
-
-            iterator operator++(int) {
-                iterator tmp(*this);
-                if(!nxt[pos]){
-                    node *tmp=new node();
-                    read(*tmp,tar->bro*blocksiz);
-                    pos=1;
-                }
-            
+                return (*pt).first.second;
             }
 
             iterator& operator++() {
-                
+                if(!tar)
+                {    
+                    int tmp;
+                    if(ot->fd_leaf((*pt).first.first).second==false)
+                    {
+                        test("operator:can't find key\n");
+                        throw index_out_of_bound();
+                    }
+                    tmp=ot->fd_leaf((*pt).first.first).first;
+                    tar=new node();
+                    read(*tar,tmp*blocksiz);
+                }
+                if(pt==tar->t->end())
+                {
+                    read(*tar,(tar->rb)*blocksiz);
+                    pt=tar->t->begin();
+                }
+                else
+                    ++pt;
+                return *this;
+            }
+            iterator operator++(int) {
+                iterator tmp(*this);
+                ++(*this);
+                return tmp;  
+            }
+            iterator& operator--() {
+                if(!tar)
+                {    
+                    int tmp;
+                    if(ot->fd_leaf((*pt).first.first).second==false)
+                    {
+                        test("operator:can't find key\n");
+                        throw index_out_of_bound();
+                    }
+                    tmp=ot->fd_leaf((*pt).first.first).first;
+                    tar=new node();
+                    read(*tar,tmp*blocksiz);
+                }
+                if(pt==tar->t->begin())
+                {
+                    read(*tar,(tar->lb)*blocksiz);
+                    pt=--(tar->t->end());
+                }
+                return *this;
             }
             iterator operator--(int) {
-                
-            }
-
-            iterator& operator--() {
-                
+                iterator tmp(*this);
+                --(*this);
+                return tmp;
             }
 
             // Overloaded of operator '==' and '!='
             // Check whether the iterators are same
             bool operator==(const iterator& rhs) const {
-                
+                return (rhs.ot==ot)&&((*pt).first==(*(rhs.pt)).first);
             }
 
             bool operator!=(const iterator& rhs) const {
-                
+                return !((*this)==rhs);
             }
         };
         
         iterator begin() {
-
+            node *p=root;
+            while(!(p->isleaf))
+            {
+                for(piterator i=p->t->begin();;++i)
+                {
+                    if((*i).second)
+                    {
+                        p=(*i).second;
+                        break;
+                    }
+                }
+            }
+            iterator tmp;
+            tmp.tar=new node();
+            read(*tmp.tar,p->ads*blocksiz);
+            tmp.ot=this;
+            tmp.pt=tmp.tar->t->begin();
+            return tmp;
         }
         
         // return an iterator to the end(the next element after the last)
         iterator end() {
-
+            node *p=root;
+            while(!(p->isleaf))
+            {
+                for(piterator i=--(p->t->end());;--i)
+                {
+                    if((*i).second)
+                    {
+                        p=(*i).second;
+                        break;
+                    }
+                }
+            }
+            iterator tmp;
+            tmp.tar=new node();
+            read(*(tmp.tar),(p->ads)*blocksiz);
+            tmp.ot=this;
+            tmp.pt=tmp.tar->t->end();
+            return tmp;
         }
 
         iterator find(const Key &key) {
-        
+            pair<int,bool> tp=fd_leaf(key);
+            iterator tmp;
+            tmp.tar=new node();
+            read(*(tmp.tar),(tp.first)*blocksiz);
+            tmp.ot=this;
+            for(piterator i=tmp.tar->t->begin();i!=tmp.tar->t->end();++i)
+            {
+                if((*i).first.first==key)
+                {
+                    tmp.pt=i;
+                    return tmp;
+                }
+            }
+            return tmp;
         }
         
         // return an iterator whose key is the smallest key greater or equal than 'key'
         iterator lower_bound(const Key &key) {
-            
+            iterator tmp;
+            tmp.ot=this;
+            node *p=root;
+            while(!(p->isleaf))
+            {
+                piterator k=p->t->begin();
+                for(piterator i=p->t->begin();i!=(--p->t->end());)
+                {
+                    if((*i).first.first<=key)
+                        k=++i;
+                    else
+                        break;
+                }
+                if((*k).second)
+                    p=(*k).second;
+                else
+                {
+                    if(k==(--p->t->end()))
+                    {
+                        test("lower_bound:key too large!\n");
+                        throw index_out_of_bound();
+                    }
+                    p=(*(++k)).second;
+                }
+            }
+            tmp.tar=new node();
+            read(*(tmp.tar),p->ads*blocksiz);
+            for(piterator i=tmp.tar->t->begin();i!=--(tmp.tar->t->end());++i)
+            {
+                if(key<=(*i).first.first)
+                {
+                    tmp.pt=i;
+                    return tmp;
+                }
+            }
+           test("lower_bound:key too large!_02\n");
+           throw index_out_of_bound();
         }
     };
+    template<class Key,class Value>
+    int BTree<Key,Value>::node::node_cnt=0;
 }  // namespace sjtu
+/*
+i 3 5
+i 4 6
+i 2 4
+i 1 3
+i 6 5
+i 410 9
+*/
