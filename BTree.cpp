@@ -1,6 +1,7 @@
 #include <cassert>
 #include <iostream>
 #include <string>
+#include<fstream>
 #include "BTree.hpp"
   //  test: constructor
 using namespace std;
@@ -20,27 +21,38 @@ int query(int key){
 
 
 void tester(){
+  ifstream f("insert.data");
+  if (!f.good())
+      cout << "NO" << endl;
   int key, value;
   char cmd;
-  while(cin >> cmd){
+  int counter=0;
+  while(f >> cmd){
     if(cmd == 'i'){
-      cin >> key >> value;
-      insert(key, value);
+      try{
+      f>> key >> value;
+      insert(key, value);}
+      catch(...)
+      {
+        cout<<"Unknown Error"<<endl;
+        return;
+      }
+      if((++counter)>=2000)
+          cout<<"count:"<<counter<<endl;
     }else
     if(cmd == 'e'){
-      cin >> key;
+      f >> key;
       erase(key);
     }else
     if(cmd == 'q'){
-      cin >> key;
+      f >> key;
       cout << query(key) << endl;
     }else{
       puts("bad_command");
     }
   }
 }
-
-int main(){
+int main() {
   tester();
   return 0;
 }

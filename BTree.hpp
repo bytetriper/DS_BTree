@@ -43,10 +43,12 @@ namespace sjtu {
             inline pair<piterator,bool> ins(pr &x,node *tar=nullptr)//insert a pr by ascending order of Key
             {
                 prn tmp(x,tar);
+                prn tmp1(pr(), nullptr);
                 if(t->empty())
                 {
                     t->push_back(tmp);
-                    return pair<piterator,bool>(--(t->end()),true);
+                    t->push_back(tmp1);
+                    return pair<piterator,bool>((t->begin()),true);
                 }
                 piterator k=t->begin();
                 for(piterator i=t->begin();i!=--(t->end());)
@@ -72,6 +74,10 @@ namespace sjtu {
                     }
                 }
                 return fg;
+            }
+            ~node()
+            {
+                delete t;
             }
         };
         using piterator =typename list<pair<pr,node *>>::iterator;
@@ -103,7 +109,7 @@ namespace sjtu {
                 }
                 const pair<pr,node *> tp(tmp,nullptr);
                 (x.t)->push_back(tp);
-                test(x.t->size());
+                //test(x.t->size());
             }
             if (!f.good())
             {
@@ -130,7 +136,7 @@ namespace sjtu {
                     test(filep);
                     throw runtime_error();
                 }
-                test("write count");
+               // test("write count");
             }
             return;
         }
@@ -173,19 +179,28 @@ namespace sjtu {
             }
         }
 
-        ~BTree() {
-            //clear();
-
-        }
-
-        // Clear the BTree
-        void clear(node *p) {//MD recursively delete
+        void release(node *p) {//MD recursively delete
             if(!p)return;
             for(piterator i=p->t->begin();i!=p->t->end();++i)
-                clear((*i).second);
+                release((*i).second);
             delete p;
             p=nullptr;
             return ;
+        }
+        ~BTree() {
+            release(root);
+            f.close();
+            test("File Closed!");
+        }
+
+        // Clear the BTree
+        void clear() {//MD recursively delete
+            release(root);
+            root=new node(this);
+            root->isleaf=true;
+            node::node_cnt=0;
+            root->ads=++node::node_cnt;
+            write(*root, root->ads * blocksiz);
         }
         inline pair<int,bool> fd_leaf(const Key &key)//MD
         {
@@ -193,7 +208,7 @@ namespace sjtu {
             while(!(p->isleaf))
             {
                 piterator k=p->t->begin();
-                for(piterator i=p->t->begin();i!=p->t->end();)
+                for(piterator i=p->t->begin();i!=--(p->t->end());)
                 {
                     if(key>=(*i).first.first)
                         k=++i;
@@ -212,27 +227,31 @@ namespace sjtu {
                 p->fa=new node(this);
                 root = p->fa;
                 pr tmp(p->t->front().first);
-                root->ins(tmp, p);
-                pr empty_node;
-                root->ins(empty_node,nullptr);
+                piterator k=(root->ins(tmp, nullptr)).first;
+                ++k;
+                (*k).second = p;
             }
             node *newson=new node(*p);
             if(newson->isleaf)
                 newson->ads=++node::node_cnt;
-            int m=p->t->size();
+            int m=p->t->size()-1;
             int mp=m>>1;int mnew=m-mp;
             for(int i=1;i<=m-mp;++i)
                 p->t->pop_back();
             for(int i=1;i<=m-mnew;++i)
                 newson->t->pop_front();
-            pr tmp(newson->t->front().first);
-            piterator k=(p->fa->ins(tmp,p)).first;
+            pr tmp1(newson->t->front().first);
+            piterator k=(p->fa->ins(tmp1,p)).first;
             ++k;
             (*k).second=newson;
             p->rb=newson->ads;
             newson->lb=p->ads;
-            if(newson->isleaf)
-                write(*newson,(newson->ads)*blocksiz);
+            if (newson->isleaf)
+            {
+                test("new node have been loaded to the file");
+                write(*newson, (newson->ads) * blocksiz);
+                write(*p, (p->ads) * blocksiz);
+            }
             if(p->fa->t->size()>node_size)
                 split(p->fa);
             return;
@@ -256,23 +275,26 @@ namespace sjtu {
                     ((*k).second)->isleaf=true;
                     ((*k).second)->fa=p;
                     ((*k).second)->ads=++(node::node_cnt);
+                    write(*((*k).second), node::node_cnt * blocksiz);
                 }
                 p=(*k).second;
             }
-            test("p.ads:");
-            test(p->ads);
+            //test("p.ads:");
+            //test(p->ads);
             read(*p, p->ads * blocksiz);
             bool fg=(p->ins(tmp)).second;
-            if(fg)
+            if (fg)
             {
                 test(p->t->size());
-                if(p->t->size()>leaf_size)
-                {    
+                if (p->t->size() > leaf_size)
+                {
                     split(p);
                     test("Split just happened!\n");
                 }
-                write(*p,p->ads*blocksiz);
+                write(*p, p->ads * blocksiz);
             }
+            else
+                test("Insertion failed!");
             return fg;
         }
         bool modify(const Key &key, const Value &value) {//MD
@@ -307,6 +329,7 @@ namespace sjtu {
                     return (*i).first.second;
             }
             test("at:can't find the corresponding value!\n");
+            return Value();
             throw index_out_of_bound();
         }
         bool erase(const Key &key) {
@@ -336,7 +359,10 @@ namespace sjtu {
                     if((*pt).first==(*other.pt).first)
                         break;
             }
-
+            ~iterator()
+            {
+                delete tar;
+            }
             // modify by iterator
             bool modify(const Value& value) {
                 if(!ot)
@@ -524,10 +550,9 @@ namespace sjtu {
     int BTree<Key,Value>::node::node_cnt=0;
 }  // namespace sjtu
 /*
-i 3 5
-i 4 6
-i 2 4
-i 1 3
-i 6 5
-i 410 9
+i -1 3
+i -2 3
+i -3 3
+i -4 3
+i 1 2
 */
