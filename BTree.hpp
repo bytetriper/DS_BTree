@@ -19,9 +19,9 @@ namespace sjtu {
         std::fstream f;
         std::string fn;
     public:
-        static const int node_size=5;
+        static const int node_size=2;
         static const int leaf_size=5;
-        static const int blocksiz=400;
+        static const int blocksiz=10086;
         class node{
             public:
             using prn=pair<pr,node*> ;
@@ -43,19 +43,21 @@ namespace sjtu {
             inline pair<piterator,bool> ins(pr &x,node *tar=nullptr)//insert a pr by ascending order of Key
             {
                 prn tmp(x,tar);
-                prn tmp1(pr(), nullptr);
                 if(t->empty())
                 {
                     t->push_back(tmp);
-                    t->push_back(tmp1);
+                    //t->push_back(tmp1);
                     return pair<piterator,bool>((t->begin()),true);
                 }
                 piterator k=t->begin();
-                for(piterator i=t->begin();i!=--(t->end());)
+                //print();
+                for(piterator i=t->begin();i!=t->end();)
                 {
+                    if (!isleaf && i == --t->end())//SP for not leaf situation
+                        break;
                     if((*i).first.first==x.first)
                         return pair<piterator,bool>(t->end(),false);
-                    if((*i).first.first<x.first)
+                    if ((*i).first.first < x.first)
                         k=++i;
                     else
                         break;
@@ -65,6 +67,8 @@ namespace sjtu {
             inline bool del(const Key &key)
             {
                 bool fg=0;
+                if (t->empty())
+                    return fg;
                 for(piterator i=t->begin();i!=t->end();++i)
                 {
                     if((*i).first.first==key)
@@ -74,6 +78,12 @@ namespace sjtu {
                     }
                 }
                 return fg;
+            }
+            inline void print()
+            {
+                std::cout << "print\n";
+                for (piterator i = t->begin(); i != t->end(); ++i)
+                    std::cout << (*i).first.first << " " << (*i).first.second << std::endl;
             }
             ~node()
             {
@@ -96,8 +106,8 @@ namespace sjtu {
                 test(filep);
                 throw runtime_error();
             }
-            test("read size equals:");
-            test(siz);
+            //test("read size equals:");
+            //test(siz);
             for(int i=1;i<=siz;++i)
             {
                 f.read(reinterpret_cast<char *>(&tmp),sizeof(pr));
@@ -124,8 +134,8 @@ namespace sjtu {
                 f.seekp(filep);
             int siz=x.t->size();
             f.write(reinterpret_cast<const char *>(&siz),sizeof(int));
-            test("write size equals:");
-            test(siz);
+            //test("write size equals:");
+            //test(siz);
             for(piterator i=x.t->begin();i!=x.t->end();++i)
             {
                 pr tmp((*i).first);
@@ -188,7 +198,7 @@ namespace sjtu {
             return ;
         }
         ~BTree() {
-            release(root);
+            //release(root);
             f.close();
             test("File Closed!");
         }
@@ -207,6 +217,7 @@ namespace sjtu {
             node *p=root; 
             while(!(p->isleaf))
             {
+                p->print();
                 piterator k=p->t->begin();
                 for(piterator i=p->t->begin();i!=--(p->t->end());)
                 {
@@ -219,39 +230,46 @@ namespace sjtu {
                     return pair<int,bool>(0,false);
                 p=(*k).second;
             }
-            return pair<int,bool>(p->ads,true);
+            return pair<int,bool>(p->ads,true);//DO NOT guarantee the key exists!
         }
         inline void split(node *p){//MD
-            if(!(p->fa))//No father ---->root
-            {
-                p->fa=new node(this);
-                root = p->fa;
-                pr tmp(p->t->front().first);
-                piterator k=(root->ins(tmp, nullptr)).first;
-                ++k;
-                (*k).second = p;
-            }
             node *newson=new node(*p);
             if(newson->isleaf)
                 newson->ads=++node::node_cnt;
-            int m=p->t->size()-1;
-            int mp=m>>1;int mnew=m-mp;
-            for(int i=1;i<=m-mp;++i)
+            int m=p->isleaf?p->t->size():p->t->size()+1;//subtle trick
+            int psiz = p->t->size();
+            int mp=m>>1;int mnew= psiz- mp;
+            for(int i=1;i<=psiz-mp;++i)
                 p->t->pop_back();
-            for(int i=1;i<=m-mnew;++i)
+            for(int i=1;i<=psiz-mnew;++i)
                 newson->t->pop_front();
-            pr tmp1(newson->t->front().first);
-            piterator k=(p->fa->ins(tmp1,p)).first;
-            ++k;
-            (*k).second=newson;
-            p->rb=newson->ads;
-            newson->lb=p->ads;
+            pr tmp1(p->isleaf?newson->t->front().first:p->t->back().first);
+            if(!(p->fa))//No father ---->root
+            {    
+                p->fa=new node();
+                root = p->fa;
+                newson->fa = root;
+                pair<pr, node*> t1(tmp1,p);
+                pair<pr, node*> t2(pr(),newson);
+                root->t->push_back(t1);
+                root->t->push_back(t2);
+            }
+            else
+            { 
+                test(tmp1.first);
+                piterator k=(p->fa->ins(tmp1,p)).first;
+                ++k;
+                (*k).second=newson;
+                
+            }
+            p->fa->print();
             if (newson->isleaf)
             {
                 test("new node have been loaded to the file");
                 write(*newson, (newson->ads) * blocksiz);
-                write(*p, (p->ads) * blocksiz);
-            }
+                newson->t->clear();//Release leaf_storage
+            } 
+            write(*p, (p->ads) * blocksiz);
             if(p->fa->t->size()>node_size)
                 split(p->fa);
             return;
@@ -285,7 +303,7 @@ namespace sjtu {
             bool fg=(p->ins(tmp)).second;
             if (fg)
             {
-                test(p->t->size());
+                //test(p->t->size());
                 if (p->t->size() > leaf_size)
                 {
                     split(p);
@@ -323,14 +341,82 @@ namespace sjtu {
             }
             node tp;
             read(tp,p.first*blocksiz);
+            tp.print();
             for(piterator i=tp.t->begin();i!=tp.t->end();++i)
             {
+                
                 if((*i).first.first==key)
                     return (*i).first.second;
             }
             test("at:can't find the corresponding value!\n");
             return Value();
             throw index_out_of_bound();
+        }
+        void merge(const node& tp)
+        {
+            int fgcnt = 0;
+            if (!tp.fa)return;
+            node *tfa=tp.fa;
+            piterator i=tfa->t->begin();
+            if(tfa->t->size()==1)//SP for "only one son" situation
+                return;
+            while(((*i).second)->ads!=tp.ads)
+                ++i;
+            node bro;
+            if(i!=tfa->t->begin())
+            {
+                read(bro,(*(--i)).second->ads*blocksiz);
+                if(bro.t->size()-1<(1+node_size)/2)
+                    ++fgcnt;
+                else
+                {
+                    tp.t->push_front(bro.t->back());
+                    bro.t->pop_back();
+                    write(bro,(*i).second->ads*blocksiz);
+                }  
+                    ++i; 
+                if(!fgcnt)
+                    return;
+            }
+            if(i!=tfa->t->end()) 
+            {
+                read(bro,(*(++i)).second->ads*blocksiz);
+                if(bro.t->size()-1<(1+node_size)/2)
+                    ++fgcnt;
+                else
+                {
+                    tp.t->push_back(bro.t->front());
+                    bro.t->pop_front();
+                    write(bro,((*i).second->ads)*blocksiz);
+                } 
+                --i;
+                if(!fgcnt)
+                    return;
+            }
+            //MERGE!!!
+            piterator tar=i;
+            if(tar!=tfa->t->begin())
+            {
+                --tar;
+                node *tmp=(*tar).second;
+                while(!tmp->t->empty())
+                {
+                    tp.t->push_front(tmp->t->back());
+                    tmp->t->pop_back();
+                }
+                tfa->t->erase(tar);
+            }
+            else
+            {
+                ++tar;
+                node *tmp=(*tar).second;
+                while(!tmp->t->empty())
+                {
+                    tp.t->push_back(tmp->t->front());
+                    tmp->t->pop_front();
+                }
+                tfa->t->erase(tar);
+            }
         }
         bool erase(const Key &key) {
             pair<int,bool> p=fd_leaf(key);
@@ -340,7 +426,11 @@ namespace sjtu {
             read(tp,p.first*blocksiz);
             bool fg=tp.del(key);
             if (fg)
+            {    
+                if(tp.t->size()<(1+node_size)/2)//Try to borrow sth from its bros or MERGE
+                    merge(tp);
                 write(tp,p.first*blocksiz);
+            }
             return fg;
         }
         
